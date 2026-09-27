@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Chess,
-  type PieceSymbol,
   type Square,
 } from "chess.js";
 import {
@@ -15,6 +14,7 @@ import "./App.css";
 type BoardOrientation = "white" | "black";
 type PlayerColorChoice = "white" | "black" | "random";
 type PlayerColor = "w" | "b";
+type PromotionPiece = "q" | "r" | "b" | "n";
 type PendingPromotion = {
   from: Square;
   to: Square;
@@ -397,7 +397,7 @@ setPendingPromotion(null);
 };
 
   const selectPromotionPiece = (
-  piece: PieceSymbol,
+  piece: PromotionPiece,
 ) => {
   if (!pendingPromotion) {
     return;
@@ -963,7 +963,7 @@ const gameResult = getGameResult();
             ["r", "Rook"],
             ["b", "Bishop"],
             ["n", "Knight"],
-          ] as Array<[PieceSymbol, string]>
+          ] as Array<[PromotionPiece, string]>
         ).map(([piece, label]) => {
           const symbols =
             playerColor === "w"
