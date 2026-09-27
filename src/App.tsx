@@ -9,113 +9,86 @@ import { createStockfishWorker } from "./services/stockfish";
 import "./App.css";
 
 type BoardOrientation = "white" | "black";
+type PlayerColorChoice = "white" | "black" | "random";
+type PlayerColor = "w" | "b";
+
+type DifficultyKey =
+  | "beginner"
+  | "casual"
+  | "club"
+  | "advanced"
+  | "master";
+
+type DifficultyConfig = {
+  label: string;
+  skill: number;
+};
+
+const DIFFICULTIES: Record<DifficultyKey, DifficultyConfig> = {
+  beginner: {
+    label: "Beginner",
+    skill: 0,
+  },
+  casual: {
+    label: "Casual",
+    skill: 4,
+  },
+  club: {
+    label: "Club Player",
+    skill: 8,
+  },
+  advanced: {
+    label: "Advanced",
+    skill: 14,
+  },
+  master: {
+    label: "Master",
+    skill: 20,
+  },
+};
 
 function App() {
   const gameRef = useRef(new Chess());
-  const game = gameRef.current;
   const stockfishRef = useRef<Worker | null>(null);
+  const aiMoveExpectedRef = useRef(false);
 
-const [engineStatus, setEngineStatus] =
-  useState("Loading Stockfish...");
+  const game = gameRef.current;
+
+  const [engineStatus, setEngineStatus] =
+    useState("Loading Stockfish...");
+  const [engineReady, setEngineReady] = useState(false);
+
   const [position, setPosition] = useState(game.fen());
   const [moveHistory, setMoveHistory] = useState<string[]>([]);
-  const [orientation, setOrientation] =
-    useState<BoardOrientation>("white");
-  const [isAiThinking, setIsAiThinking] = useState(false);
-const [engineReady, setEngineReady] = useState(false);
   const [lastMove, setLastMove] = useState<{
     from: string;
     to: string;
   } | null>(null);
 
-  useEffect(() => {
-  const worker = createStockfishWorker();
+  const [orientation, setOrientation] =
+    useState<BoardOrientation>("white");
 
-  stockfishRef.current = worker;
+  const [playerColorChoice, setPlayerColorChoice] =
+    useState<PlayerColorChoice>("white");
+  const [playerColor, setPlayerColor] =
+    useState<PlayerColor>("w");
 
-  worker.onmessage = (event) => {
-  const messages = String(event.data).split("\n");
+  const [difficulty, setDifficulty] =
+    useState<DifficultyKey>("casual");
 
-  for (const rawMessage of messages) {
-    const message = rawMessage.trim();
+  const [isAiThinking, setIsAiThinking] = useState(false);
+  const [showSetup, setShowSetup] = useState(true);
 
-    if (!message) continue;
-
-    console.log("[Stockfish]", message);
-
-    if (message === "uciok") {
-      worker.postMessage("isready");
-    }
-
-    if (message === "readyok") {
-      setEngineReady(true);
-      setEngineStatus("Stockfish 19 ready");
-    }
-
-    if (message.startsWith("bestmove")) {
-      const bestMove = message.split(" ")[1];
-
-      if (!bestMove || bestMove === "(none)") {
-        setIsAiThinking(false);
-        return;
-      }
-
-      const from = bestMove.slice(0, 2);
-      const to = bestMove.slice(2, 4);
-      const promotion = bestMove.slice(4, 5) || "q";
-
-      try {
-        gameRef.current.move({
-          from,
-          to,
-          promotion,
-        });
-
-        const currentGame = gameRef.current;
-
-        setPosition(currentGame.fen());
-        setMoveHistory(currentGame.history());
-
-        const history = currentGame.history({
-          verbose: true,
-        });
-
-        const latestMove = history.at(-1);
-
-        if (latestMove) {
-          setLastMove({
-            from: latestMove.from,
-            to: latestMove.to,
-          });
-        }
-      } catch (error) {
-        console.error("AI move error:", error);
-      }
-
-      setIsAiThinking(false);
-      setEngineStatus("Stockfish 19 ready");
-    }
-  }
-};
-
-  worker.onerror = (error) => {
-    console.error("Stockfish error:", error);
-    setEngineStatus("Engine error");
-  };
-
-  worker.postMessage("uci");
-
-  return () => {
-    worker.terminate();
-    stockfishRef.current = null;
-  };
-  }, []);
-  
   const updateGameState = () => {
-    setPosition(game.fen());
-    setMoveHistory(game.history());
+    const currentGame = gameRef.current;
 
-    const verboseHistory = game.history({ verbose: true });
+    setPosition(currentGame.fen());
+    setMoveHistory(currentGame.history());
+
+    const verboseHistory = currentGame.history({
+      verbose: true,
+    });
+
     const latestMove = verboseHistory.at(-1);
 
     if (latestMove) {
@@ -128,68 +101,235 @@ const [engineReady, setEngineReady] = useState(false);
     }
   };
 
-  const onPieceDrop = ({
-  sourceSquare,
-  targetSquare,
-}: PieceDropHandlerArgs) => {
-  if (
-    !targetSquare ||
-    game.isGameOver() ||
-    !engineReady ||
-    isAiThinking ||
-    game.turn() !== "w"
-  ) {
-    return false;
-  }
+  const requestAiMove = () => {
+    const worker = stockfishRef.current;
+    const currentGame = gameRef.current;
 
-  try {
-    game.move({
-      from: sourceSquare,
-      to: targetSquare,
-      promotion: "q",
-    });
+    if (
+      !worker ||
+      !engineReady ||
+      currentGame.isGameOver()
+    ) {
+      return;
+    }
 
-    updateGameState();
+    aiMoveExpectedRef.current = true;
 
-    if (!game.isGameOver()) {
+    setIsAiThinking(true);
+    setEngineStatus("Stockfish is thinking...");
+
+    worker.postMessage(
+      `position fen ${currentGame.fen()}`,
+    );
+
+    worker.postMessage("go movetime 500");
+  };
+
+  useEffect(() => {
+    const worker = createStockfishWorker();
+
+    stockfishRef.current = worker;
+
+    worker.onmessage = (event) => {
+      const messages = String(event.data).split("\n");
+
+      for (const rawMessage of messages) {
+        const message = rawMessage.trim();
+
+        if (!message) continue;
+
+        console.log("[Stockfish]", message);
+
+        if (message === "uciok") {
+          worker.postMessage("isready");
+        }
+
+        if (message === "readyok") {
+          setEngineReady(true);
+          setEngineStatus("Stockfish 19 ready");
+        }
+
+        if (message.startsWith("bestmove")) {
+          if (!aiMoveExpectedRef.current) {
+            continue;
+          }
+
+          aiMoveExpectedRef.current = false;
+
+          const bestMove = message.split(" ")[1];
+
+          if (!bestMove || bestMove === "(none)") {
+            setIsAiThinking(false);
+            return;
+          }
+
+          const from = bestMove.slice(0, 2);
+          const to = bestMove.slice(2, 4);
+          const promotion =
+            bestMove.slice(4, 5) || "q";
+
+          try {
+            const currentGame = gameRef.current;
+
+            currentGame.move({
+              from,
+              to,
+              promotion,
+            });
+
+            setPosition(currentGame.fen());
+            setMoveHistory(currentGame.history());
+
+            const history = currentGame.history({
+              verbose: true,
+            });
+
+            const latestMove = history.at(-1);
+
+            if (latestMove) {
+              setLastMove({
+                from: latestMove.from,
+                to: latestMove.to,
+              });
+            }
+          } catch (error) {
+            console.error("AI move error:", error);
+          }
+
+          setIsAiThinking(false);
+          setEngineStatus("Stockfish 19 ready");
+        }
+      }
+    };
+
+    worker.onerror = (error) => {
+      console.error("Stockfish error:", error);
+      setEngineStatus("Engine error");
+    };
+
+    worker.postMessage("uci");
+
+    return () => {
+      worker.terminate();
+      stockfishRef.current = null;
+    };
+  }, []);
+
+  const startConfiguredGame = () => {
+    if (!engineReady) {
+      return;
+    }
+
+    let resolvedColor: PlayerColor;
+
+    if (playerColorChoice === "random") {
+      resolvedColor =
+        Math.random() < 0.5 ? "w" : "b";
+    } else {
+      resolvedColor =
+        playerColorChoice === "white" ? "w" : "b";
+    }
+
+    const worker = stockfishRef.current;
+
+    aiMoveExpectedRef.current = false;
+    worker?.postMessage("stop");
+
+    game.reset();
+
+    setPlayerColor(resolvedColor);
+    setOrientation(
+      resolvedColor === "w" ? "white" : "black",
+    );
+
+    setPosition(game.fen());
+    setMoveHistory([]);
+    setLastMove(null);
+    setIsAiThinking(false);
+    setShowSetup(false);
+    setEngineStatus("Stockfish 19 ready");
+
+    worker?.postMessage("ucinewgame");
+
+    worker?.postMessage(
+      `setoption name Skill Level value ${DIFFICULTIES[difficulty].skill}`,
+    );
+
+    if (resolvedColor === "b" && worker) {
+      aiMoveExpectedRef.current = true;
+
       setIsAiThinking(true);
       setEngineStatus("Stockfish is thinking...");
 
-      const worker = stockfishRef.current;
+      worker.postMessage(
+        `position fen ${game.fen()}`,
+      );
 
-      if (worker) {
-        worker.postMessage(`position fen ${game.fen()}`);
-        worker.postMessage("go movetime 500");
-      }
+      worker.postMessage("go movetime 500");
+    }
+  };
+
+  const openNewGameSetup = () => {
+    aiMoveExpectedRef.current = false;
+
+    stockfishRef.current?.postMessage("stop");
+
+    setIsAiThinking(false);
+    setShowSetup(true);
+  };
+
+  const onPieceDrop = ({
+    sourceSquare,
+    targetSquare,
+  }: PieceDropHandlerArgs) => {
+    if (
+      !targetSquare ||
+      showSetup ||
+      game.isGameOver() ||
+      !engineReady ||
+      isAiThinking ||
+      game.turn() !== playerColor
+    ) {
+      return false;
     }
 
-    return true;
-  } catch {
-    return false;
-  }
-};
+    try {
+      game.move({
+        from: sourceSquare,
+        to: targetSquare,
+        promotion: "q",
+      });
 
-  const startNewGame = () => {
-    game.reset();
-    updateGameState();
+      updateGameState();
+
+      if (!game.isGameOver()) {
+        requestAiMove();
+      }
+
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   const undoMove = () => {
-  if (
-    game.history().length === 0 ||
-    isAiThinking
-  ) {
-    return;
-  }
+    if (
+      game.history().length < 2 ||
+      isAiThinking
+    ) {
+      return;
+    }
 
-  game.undo();
+    aiMoveExpectedRef.current = false;
+    stockfishRef.current?.postMessage("stop");
 
-  if (game.history().length > 0) {
     game.undo();
-  }
+    game.undo();
 
-  updateGameState();
-};
+    updateGameState();
+
+    setEngineStatus("Stockfish 19 ready");
+  };
 
   const flipBoard = () => {
     setOrientation((current) =>
@@ -198,8 +338,12 @@ const [engineReady, setEngineReady] = useState(false);
   };
 
   const gameStatus = useMemo(() => {
-    const sideToMove =
-      game.turn() === "w" ? "White" : "Black";
+    if (showSetup) {
+      return {
+        label: "New game",
+        text: "Choose your game settings",
+      };
+    }
 
     if (game.isCheckmate()) {
       const winner =
@@ -225,18 +369,38 @@ const [engineReady, setEngineReady] = useState(false);
       };
     }
 
+    if (isAiThinking) {
+      return {
+        label: "Opponent",
+        text: "Stockfish is thinking...",
+      };
+    }
+
     if (game.isCheck()) {
       return {
+        label: "Your turn",
+        text: "You are in check",
+      };
+    }
+
+    if (game.turn() === playerColor) {
+      return {
         label: "In progress",
-        text: `${sideToMove} to move — Check`,
+        text: "Your turn",
       };
     }
 
     return {
       label: "In progress",
-      text: `${sideToMove} to move`,
+      text: "Opponent's turn",
     };
-  }, [position, game]);
+  }, [
+    position,
+    game,
+    isAiThinking,
+    playerColor,
+    showSetup,
+  ]);
 
   const formattedMoves = useMemo(() => {
     const rows: Array<{
@@ -245,7 +409,11 @@ const [engineReady, setEngineReady] = useState(false);
       black?: string;
     }> = [];
 
-    for (let index = 0; index < moveHistory.length; index += 2) {
+    for (
+      let index = 0;
+      index < moveHistory.length;
+      index += 2
+    ) {
       rows.push({
         number: index / 2 + 1,
         white: moveHistory[index],
@@ -256,19 +424,25 @@ const [engineReady, setEngineReady] = useState(false);
     return rows;
   }, [moveHistory]);
 
+  const difficultyOptions = Object.entries(
+    DIFFICULTIES,
+  ) as Array<[DifficultyKey, DifficultyConfig]>;
+
   const chessboardOptions = {
     id: "chess-journey-board",
     position,
     boardOrientation: orientation,
     onPieceDrop,
+
+    allowDragging:
+      engineReady &&
+      !showSetup &&
+      !isAiThinking &&
+      game.turn() === playerColor,
+
     animationDurationInMs: 180,
     showNotation: true,
 
-    allowDragging:
-  engineReady &&
-  !isAiThinking &&
-      game.turn() === "w",
-    
     lightSquareStyle: {
       backgroundColor: "#e9e5dc",
     },
@@ -280,16 +454,19 @@ const [engineReady, setEngineReady] = useState(false);
     boardStyle: {
       borderRadius: "14px",
       overflow: "hidden",
-      boxShadow: "0 24px 80px rgba(0, 0, 0, 0.28)",
+      boxShadow:
+        "0 24px 80px rgba(0, 0, 0, 0.28)",
     },
 
     squareStyles: lastMove
       ? {
           [lastMove.from]: {
-            backgroundColor: "rgba(227, 190, 76, 0.50)",
+            backgroundColor:
+              "rgba(227, 190, 76, 0.50)",
           },
           [lastMove.to]: {
-            backgroundColor: "rgba(227, 190, 76, 0.62)",
+            backgroundColor:
+              "rgba(227, 190, 76, 0.62)",
           },
         }
       : {},
@@ -308,7 +485,9 @@ const [engineReady, setEngineReady] = useState(false);
         </a>
 
         <div className="topbar-actions">
-          <span className="version-badge">V2 Preview</span>
+          <span className="version-badge">
+            V2 Preview
+          </span>
 
           <button
             className="icon-button"
@@ -328,11 +507,14 @@ const [engineReady, setEngineReady] = useState(false);
             <div className="player-avatar">AI</div>
 
             <div className="player-info">
-              <strong>Training opponent</strong>
-              <span>{engineStatus}</span>
+              <strong>Stockfish</strong>
+              <span>
+                {DIFFICULTIES[difficulty].label} ·{" "}
+                {engineStatus}
+              </span>
             </div>
 
-            <div className="player-rating">—</div>
+            <div className="player-rating">AI</div>
           </div>
 
           <div className="board-frame">
@@ -346,17 +528,26 @@ const [engineReady, setEngineReady] = useState(false);
 
             <div className="player-info">
               <strong>You</strong>
-              <span>Journey begins here</span>
+              <span>
+                Playing{" "}
+                {playerColor === "w"
+                  ? "White"
+                  : "Black"}
+              </span>
             </div>
 
-            <div className="player-rating">Unrated</div>
+            <div className="player-rating">
+              Unrated
+            </div>
           </div>
         </section>
 
         <aside className="game-panel">
           <div className="game-panel__header">
             <div>
-              <p className="eyebrow">CASUAL GAME</p>
+              <p className="eyebrow">
+                CASUAL GAME
+              </p>
               <h1>Play chess</h1>
             </div>
 
@@ -371,14 +562,18 @@ const [engineReady, setEngineReady] = useState(false);
           <div className="moves-panel">
             <div className="panel-heading">
               <span>Moves</span>
-              <small>{moveHistory.length} played</small>
+              <small>
+                {moveHistory.length} played
+              </small>
             </div>
 
             <div className="moves-list">
               {formattedMoves.length === 0 ? (
                 <div className="empty-state">
                   <span>♟</span>
-                  <p>Your moves will appear here.</p>
+                  <p>
+                    Your moves will appear here.
+                  </p>
                 </div>
               ) : (
                 formattedMoves.map((move) => (
@@ -390,8 +585,13 @@ const [engineReady, setEngineReady] = useState(false);
                       {move.number}.
                     </span>
 
-                    <span>{move.white ?? ""}</span>
-                    <span>{move.black ?? ""}</span>
+                    <span>
+                      {move.white ?? ""}
+                    </span>
+
+                    <span>
+                      {move.black ?? ""}
+                    </span>
                   </div>
                 ))
               )}
@@ -402,7 +602,7 @@ const [engineReady, setEngineReady] = useState(false);
             <button
               className="primary-button"
               type="button"
-              onClick={startNewGame}
+              onClick={openNewGameSetup}
             >
               New game
             </button>
@@ -411,7 +611,10 @@ const [engineReady, setEngineReady] = useState(false);
               className="secondary-button"
               type="button"
               onClick={undoMove}
-              disabled={moveHistory.length === 0}
+              disabled={
+                moveHistory.length < 2 ||
+                isAiThinking
+              }
             >
               Undo move
             </button>
@@ -434,6 +637,125 @@ const [engineReady, setEngineReady] = useState(false);
           </div>
         </aside>
       </main>
+
+      {showSetup && (
+        <div className="setup-backdrop">
+          <div className="setup-card">
+            <div className="setup-heading">
+              <span className="setup-icon">
+                ♞
+              </span>
+
+              <div>
+                <p className="eyebrow">
+                  NEW GAME
+                </p>
+                <h2>Play vs Stockfish</h2>
+              </div>
+            </div>
+
+            <div className="setup-section">
+              <span className="setup-label">
+                Your color
+              </span>
+
+              <div className="setup-options setup-options--colors">
+                <button
+                  type="button"
+                  className={`setup-option ${
+                    playerColorChoice === "white"
+                      ? "setup-option--active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    setPlayerColorChoice("white")
+                  }
+                >
+                  <strong>♙</strong>
+                  <span>White</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`setup-option ${
+                    playerColorChoice === "black"
+                      ? "setup-option--active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    setPlayerColorChoice("black")
+                  }
+                >
+                  <strong>♟</strong>
+                  <span>Black</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`setup-option ${
+                    playerColorChoice === "random"
+                      ? "setup-option--active"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    setPlayerColorChoice("random")
+                  }
+                >
+                  <strong>?</strong>
+                  <span>Random</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="setup-section">
+              <span className="setup-label">
+                Difficulty
+              </span>
+
+              <div className="difficulty-list">
+                {difficultyOptions.map(
+                  ([key, config]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`difficulty-option ${
+                        difficulty === key
+                          ? "difficulty-option--active"
+                          : ""
+                      }`}
+                      onClick={() =>
+                        setDifficulty(key)
+                      }
+                    >
+                      <span>{config.label}</span>
+
+                      {difficulty === key && (
+                        <strong>✓</strong>
+                      )}
+                    </button>
+                  ),
+                )}
+              </div>
+            </div>
+
+            <button
+              className="start-game-button"
+              type="button"
+              onClick={startConfiguredGame}
+              disabled={!engineReady}
+            >
+              {engineReady
+                ? "Start game"
+                : "Loading engine..."}
+            </button>
+
+            <p className="setup-footer">
+              You can change these settings
+              before every new game.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
