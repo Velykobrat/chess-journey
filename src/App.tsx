@@ -1,9 +1,10 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import {
   Chessboard,
   type PieceDropHandlerArgs,
 } from "react-chessboard";
+import { createStockfishWorker } from "./services/stockfish";
 
 import "./App.css";
 
@@ -12,16 +13,104 @@ type BoardOrientation = "white" | "black";
 function App() {
   const gameRef = useRef(new Chess());
   const game = gameRef.current;
+  const stockfishRef = useRef<Worker | null>(null);
 
+const [engineStatus, setEngineStatus] =
+  useState("Loading Stockfish...");
   const [position, setPosition] = useState(game.fen());
   const [moveHistory, setMoveHistory] = useState<string[]>([]);
   const [orientation, setOrientation] =
     useState<BoardOrientation>("white");
+  const [isAiThinking, setIsAiThinking] = useState(false);
+const [engineReady, setEngineReady] = useState(false);
   const [lastMove, setLastMove] = useState<{
     from: string;
     to: string;
   } | null>(null);
 
+  useEffect(() => {
+  const worker = createStockfishWorker();
+
+  stockfishRef.current = worker;
+
+  worker.onmessage = (event) => {
+  const messages = String(event.data).split("\n");
+
+  for (const rawMessage of messages) {
+    const message = rawMessage.trim();
+
+    if (!message) continue;
+
+    console.log("[Stockfish]", message);
+
+    if (message === "uciok") {
+      worker.postMessage("isready");
+    }
+
+    if (message === "readyok") {
+      setEngineReady(true);
+      setEngineStatus("Stockfish 19 ready");
+    }
+
+    if (message.startsWith("bestmove")) {
+      const bestMove = message.split(" ")[1];
+
+      if (!bestMove || bestMove === "(none)") {
+        setIsAiThinking(false);
+        return;
+      }
+
+      const from = bestMove.slice(0, 2);
+      const to = bestMove.slice(2, 4);
+      const promotion = bestMove.slice(4, 5) || "q";
+
+      try {
+        gameRef.current.move({
+          from,
+          to,
+          promotion,
+        });
+
+        const currentGame = gameRef.current;
+
+        setPosition(currentGame.fen());
+        setMoveHistory(currentGame.history());
+
+        const history = currentGame.history({
+          verbose: true,
+        });
+
+        const latestMove = history.at(-1);
+
+        if (latestMove) {
+          setLastMove({
+            from: latestMove.from,
+            to: latestMove.to,
+          });
+        }
+      } catch (error) {
+        console.error("AI move error:", error);
+      }
+
+      setIsAiThinking(false);
+      setEngineStatus("Stockfish 19 ready");
+    }
+  }
+};
+
+  worker.onerror = (error) => {
+    console.error("Stockfish error:", error);
+    setEngineStatus("Engine error");
+  };
+
+  worker.postMessage("uci");
+
+  return () => {
+    worker.terminate();
+    stockfishRef.current = null;
+  };
+  }, []);
+  
   const updateGameState = () => {
     setPosition(game.fen());
     setMoveHistory(game.history());
@@ -40,26 +129,45 @@ function App() {
   };
 
   const onPieceDrop = ({
-    sourceSquare,
-    targetSquare,
-  }: PieceDropHandlerArgs) => {
-    if (!targetSquare || game.isGameOver()) {
-      return false;
+  sourceSquare,
+  targetSquare,
+}: PieceDropHandlerArgs) => {
+  if (
+    !targetSquare ||
+    game.isGameOver() ||
+    !engineReady ||
+    isAiThinking ||
+    game.turn() !== "w"
+  ) {
+    return false;
+  }
+
+  try {
+    game.move({
+      from: sourceSquare,
+      to: targetSquare,
+      promotion: "q",
+    });
+
+    updateGameState();
+
+    if (!game.isGameOver()) {
+      setIsAiThinking(true);
+      setEngineStatus("Stockfish is thinking...");
+
+      const worker = stockfishRef.current;
+
+      if (worker) {
+        worker.postMessage(`position fen ${game.fen()}`);
+        worker.postMessage("go movetime 500");
+      }
     }
 
-    try {
-      game.move({
-        from: sourceSquare,
-        to: targetSquare,
-        promotion: "q",
-      });
-
-      updateGameState();
-      return true;
-    } catch {
-      return false;
-    }
-  };
+    return true;
+  } catch {
+    return false;
+  }
+};
 
   const startNewGame = () => {
     game.reset();
@@ -67,13 +175,21 @@ function App() {
   };
 
   const undoMove = () => {
-    if (game.history().length === 0) {
-      return;
-    }
+  if (
+    game.history().length === 0 ||
+    isAiThinking
+  ) {
+    return;
+  }
 
+  game.undo();
+
+  if (game.history().length > 0) {
     game.undo();
-    updateGameState();
-  };
+  }
+
+  updateGameState();
+};
 
   const flipBoard = () => {
     setOrientation((current) =>
@@ -148,6 +264,11 @@ function App() {
     animationDurationInMs: 180,
     showNotation: true,
 
+    allowDragging:
+  engineReady &&
+  !isAiThinking &&
+      game.turn() === "w",
+    
     lightSquareStyle: {
       backgroundColor: "#e9e5dc",
     },
@@ -208,7 +329,7 @@ function App() {
 
             <div className="player-info">
               <strong>Training opponent</strong>
-              <span>Engine coming soon</span>
+              <span>{engineStatus}</span>
             </div>
 
             <div className="player-rating">—</div>
