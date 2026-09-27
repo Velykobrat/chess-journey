@@ -728,3 +728,177 @@ button {
     min-height: 68px;
   }
 }
+
+.promotion-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+
+  display: grid;
+  place-items: center;
+
+  padding: 20px;
+
+  background: rgba(5, 8, 6, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.promotion-card {
+  width: min(420px, 100%);
+  padding: 26px;
+
+  border: 1px solid var(--border);
+  border-radius: 20px;
+
+  background: var(--surface);
+
+  box-shadow:
+    0 35px 120px rgba(0, 0, 0, 0.55);
+}
+
+.promotion-card h2 {
+  margin: 4px 0 22px;
+
+  font-size: 1.4rem;
+  letter-spacing: -0.04em;
+}
+
+.promotion-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 9px;
+}
+
+.promotion-option {
+  min-height: 100px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  gap: 8px;
+
+  border: 1px solid var(--border);
+  border-radius: 13px;
+
+  background: var(--surface-light);
+  color: var(--text);
+
+  cursor: pointer;
+
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.promotion-option:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+  transform: translateY(-2px);
+}
+
+.promotion-option strong {
+  font-size: 2.35rem;
+  line-height: 1;
+}
+
+.promotion-option span {
+  color: var(--muted);
+
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+@media (max-width: 480px) {
+  .promotion-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.result-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+
+  display: grid;
+  place-items: center;
+
+  padding: 20px;
+
+  background: rgba(5, 8, 6, 0.76);
+  backdrop-filter: blur(10px);
+}
+
+.result-card {
+  width: min(420px, 100%);
+
+  padding: 32px 28px;
+
+  border: 1px solid var(--border);
+  border-radius: 22px;
+
+  background: var(--surface);
+
+  text-align: center;
+
+  box-shadow:
+    0 35px 120px rgba(0, 0, 0, 0.58);
+}
+
+.result-symbol {
+  width: 68px;
+  height: 68px;
+
+  display: grid;
+  place-items: center;
+
+  margin: 0 auto 20px;
+
+  border-radius: 18px;
+
+  background: rgba(217, 185, 91, 0.12);
+  color: var(--accent);
+
+  font-size: 2.25rem;
+}
+
+.result-card h2 {
+  margin: 6px 0;
+
+  font-size: 2rem;
+  letter-spacing: -0.05em;
+}
+
+.result-description {
+  margin: 0;
+
+  color: var(--muted);
+
+  font-size: 0.85rem;
+}
+
+.result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+
+  margin: 22px 0;
+
+  color: var(--muted);
+
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.result-actions {
+  display: grid;
+  gap: 9px;
+}
+
+.result-actions .secondary-button {
+  width: 100%;
+  min-height: 48px;
+}

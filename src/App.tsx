@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Chess } from "chess.js";
+import {
+  Chess,
+  type PieceSymbol,
+  type Square,
+} from "chess.js";
 import {
   Chessboard,
   type PieceDropHandlerArgs,
@@ -11,7 +15,10 @@ import "./App.css";
 type BoardOrientation = "white" | "black";
 type PlayerColorChoice = "white" | "black" | "random";
 type PlayerColor = "w" | "b";
-
+type PendingPromotion = {
+  from: Square;
+  to: Square;
+};
 type DifficultyKey =
   | "beginner"
   | "casual"
@@ -79,6 +86,9 @@ function App() {
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [showSetup, setShowSetup] = useState(true);
 
+  const [pendingPromotion, setPendingPromotion] =
+    useState<PendingPromotion | null>(null);
+  
   const updateGameState = () => {
     const currentGame = gameRef.current;
 
@@ -245,6 +255,7 @@ function App() {
     setPosition(game.fen());
     setMoveHistory([]);
     setLastMove(null);
+    setPendingPromotion(null);
     setIsAiThinking(false);
     setShowSetup(false);
     setEngineStatus("Stockfish 19 ready");
@@ -269,49 +280,153 @@ function App() {
     }
   };
 
+  const rematchGame = () => {
+  if (!engineReady) {
+    return;
+  }
+
+  const worker = stockfishRef.current;
+
+  aiMoveExpectedRef.current = false;
+  worker?.postMessage("stop");
+
+  game.reset();
+
+  setPosition(game.fen());
+  setMoveHistory([]);
+  setLastMove(null);
+  setPendingPromotion(null);
+  setIsAiThinking(false);
+  setShowSetup(false);
+  setEngineStatus("Stockfish 19 ready");
+
+  setOrientation(
+    playerColor === "w" ? "white" : "black",
+  );
+
+  worker?.postMessage("ucinewgame");
+
+  worker?.postMessage(
+    `setoption name Skill Level value ${
+      DIFFICULTIES[difficulty].skill
+    }`,
+  );
+
+  if (playerColor === "b" && worker) {
+    aiMoveExpectedRef.current = true;
+
+    setIsAiThinking(true);
+    setEngineStatus("Stockfish is thinking...");
+
+    worker.postMessage(
+      `position fen ${game.fen()}`,
+    );
+
+    worker.postMessage("go movetime 500");
+  }
+  };
+  
   const openNewGameSetup = () => {
     aiMoveExpectedRef.current = false;
 
     stockfishRef.current?.postMessage("stop");
-
+setPendingPromotion(null);
     setIsAiThinking(false);
     setShowSetup(true);
   };
 
   const onPieceDrop = ({
-    sourceSquare,
-    targetSquare,
-  }: PieceDropHandlerArgs) => {
-    if (
-      !targetSquare ||
-      showSetup ||
-      game.isGameOver() ||
-      !engineReady ||
-      isAiThinking ||
-      game.turn() !== playerColor
-    ) {
-      return false;
-    }
+  sourceSquare,
+  targetSquare,
+}: PieceDropHandlerArgs) => {
+  if (
+    !targetSquare ||
+    showSetup ||
+    pendingPromotion ||
+    game.isGameOver() ||
+    !engineReady ||
+    isAiThinking ||
+    game.turn() !== playerColor
+  ) {
+    return false;
+  }
 
-    try {
-      game.move({
-        from: sourceSquare,
-        to: targetSquare,
-        promotion: "q",
+  const from = sourceSquare as Square;
+  const to = targetSquare as Square;
+
+  const isLastRank =
+    targetSquare.endsWith("8") ||
+    targetSquare.endsWith("1");
+
+  if (isLastRank) {
+    const possibleMoves = game.moves({
+      square: from,
+    });
+
+    const isPromotion = possibleMoves.some(
+      (move) =>
+        move.startsWith(`${targetSquare}=`),
+    );
+
+    if (isPromotion) {
+      setPendingPromotion({
+        from,
+        to,
       });
 
-      updateGameState();
-
-      if (!game.isGameOver()) {
-        requestAiMove();
-      }
-
       return true;
-    } catch {
-      return false;
     }
-  };
+  }
 
+  try {
+    game.move({
+      from,
+      to,
+    });
+
+    updateGameState();
+
+    if (!game.isGameOver()) {
+      requestAiMove();
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+  const selectPromotionPiece = (
+  piece: PieceSymbol,
+) => {
+  if (!pendingPromotion) {
+    return;
+  }
+
+  try {
+    game.move({
+      from: pendingPromotion.from,
+      to: pendingPromotion.to,
+      promotion: piece,
+    });
+
+    setPendingPromotion(null);
+
+    updateGameState();
+
+    if (!game.isGameOver()) {
+      requestAiMove();
+    }
+  } catch (error) {
+    console.error(
+      "Promotion error:",
+      error,
+    );
+
+    setPendingPromotion(null);
+  }
+  };
+  
   const undoMove = () => {
     if (
       game.history().length < 2 ||
@@ -337,6 +452,73 @@ function App() {
     );
   };
 
+  const getGameResult = () => {
+  const currentGame = gameRef.current;
+
+  if (showSetup || !currentGame.isGameOver()) {
+    return null;
+  }
+
+  if (currentGame.isCheckmate()) {
+    const winner: PlayerColor =
+      currentGame.turn() === "w" ? "b" : "w";
+
+    if (winner === playerColor) {
+      return {
+        title: "You win!",
+        description: "Checkmate",
+        symbol: "♔",
+      };
+    }
+
+    return {
+      title: "You lose",
+      description: "Checkmate",
+      symbol: "♚",
+    };
+  }
+
+  if (currentGame.isStalemate()) {
+    return {
+      title: "Draw",
+      description: "Stalemate",
+      symbol: "½",
+    };
+  }
+
+  if (currentGame.isInsufficientMaterial()) {
+    return {
+      title: "Draw",
+      description: "Insufficient material",
+      symbol: "½",
+    };
+  }
+
+  if (currentGame.isThreefoldRepetition()) {
+    return {
+      title: "Draw",
+      description: "Threefold repetition",
+      symbol: "½",
+    };
+  }
+
+  if (currentGame.isDrawByFiftyMoves()) {
+    return {
+      title: "Draw",
+      description: "50-move rule",
+      symbol: "½",
+    };
+  }
+
+  return {
+    title: "Draw",
+    description: "Game drawn",
+    symbol: "½",
+  };
+};
+
+const gameResult = getGameResult();
+  
   const gameStatus = useMemo(() => {
     if (showSetup) {
       return {
@@ -344,6 +526,13 @@ function App() {
         text: "Choose your game settings",
       };
     }
+
+    if (pendingPromotion) {
+  return {
+    label: "Promotion",
+    text: "Choose a piece",
+  };
+}
 
     if (game.isCheckmate()) {
       const winner =
@@ -390,17 +579,17 @@ function App() {
       };
     }
 
-    return {
-      label: "In progress",
-      text: "Opponent's turn",
-    };
-  }, [
-    position,
-    game,
-    isAiThinking,
-    playerColor,
-    showSetup,
-  ]);
+      return {
+    label: "In progress",
+    text: "Opponent's turn",
+  };
+}, [
+  position,
+  game,
+  isAiThinking,
+  playerColor,
+  showSetup,
+]);
 
   const formattedMoves = useMemo(() => {
     const rows: Array<{
@@ -435,10 +624,11 @@ function App() {
     onPieceDrop,
 
     allowDragging:
-      engineReady &&
-      !showSetup &&
-      !isAiThinking &&
-      game.turn() === playerColor,
+  engineReady &&
+  !showSetup &&
+  !pendingPromotion &&
+  !isAiThinking &&
+  game.turn() === playerColor,
 
     animationDurationInMs: 180,
     showNotation: true,
@@ -756,6 +946,124 @@ function App() {
           </div>
         </div>
       )}
+
+      {pendingPromotion && (
+  <div className="promotion-backdrop">
+    <div className="promotion-card">
+      <p className="eyebrow">
+        PAWN PROMOTION
+      </p>
+
+      <h2>Choose your piece</h2>
+
+      <div className="promotion-grid">
+        {(
+          [
+            ["q", "Queen"],
+            ["r", "Rook"],
+            ["b", "Bishop"],
+            ["n", "Knight"],
+          ] as Array<[PieceSymbol, string]>
+        ).map(([piece, label]) => {
+          const symbols =
+            playerColor === "w"
+              ? {
+                  q: "♕",
+                  r: "♖",
+                  b: "♗",
+                  n: "♘",
+                }
+              : {
+                  q: "♛",
+                  r: "♜",
+                  b: "♝",
+                  n: "♞",
+                };
+         
+          return (
+            <button
+              key={piece}
+              type="button"
+              className="promotion-option"
+              onClick={() =>
+                selectPromotionPiece(piece)
+              }
+            >
+              <strong>
+                {symbols[piece]}
+              </strong>
+
+              <span>{label}</span>
+            </button>
+          );
+        })}
+              
+      </div>
+    </div>
+  </div>
+      )}
+      
+      {gameResult && !showSetup && (
+  <div className="result-backdrop">
+    <div className="result-card">
+      <div className="result-symbol">
+        {gameResult.symbol}
+      </div>
+
+      <p className="eyebrow">
+        GAME OVER
+      </p>
+
+      <h2>{gameResult.title}</h2>
+
+      <p className="result-description">
+        {gameResult.description}
+      </p>
+
+      <div className="result-meta">
+        <span>
+          {DIFFICULTIES[difficulty].label}
+        </span>
+
+        <span>·</span>
+
+        <span>
+          You played{" "}
+          {playerColor === "w"
+            ? "White"
+            : "Black"}
+        </span>
+
+        <span>·</span>
+
+        <span>
+          {Math.ceil(moveHistory.length / 2)}{" "}
+          moves
+        </span>
+      </div>
+
+      <div className="result-actions">
+        <button
+          className="start-game-button"
+          type="button"
+          onClick={rematchGame}
+        >
+          Rematch
+        </button>
+
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={openNewGameSetup}
+        >
+          Change settings
+        </button>
+      </div>
+    </div>
+  </div>
+          )
+      }
+      
     </div>
   );
 }
