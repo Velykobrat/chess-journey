@@ -12,6 +12,15 @@ export const DIFFICULTIES = {
   master: { label: "Master", skill: 20 },
 } as const;
 export type DifficultyKey = keyof typeof DIFFICULTIES;
+export type CompletedGame = Readonly<{
+  id: string; date: string; result: "win" | "draw" | "loss";
+  playerColor: PlayerColor; difficulty: DifficultyKey; moves: number;
+}>;
+let fallbackId = 0;
+function newGameId() {
+  try { return globalThis.crypto.randomUUID(); }
+  catch { return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2) + "-" + (++fallbackId); }
+}
 export function gameResult(game: Chess, player: PlayerColor) {
   if (!game.isGameOver()) return null;
   if (game.isCheckmate()) return game.turn() !== player
@@ -49,10 +58,14 @@ export class GameController {
   private difficulty: DifficultyKey = "casual";
   private pendingPromotion: { from: Square; to: Square } | null = null;
   private snapshot;
+  private gameId = "";
+  private completed: CompletedGame | null = null;
+  private readonly onComplete: (game: CompletedGame) => void;
 
   private readonly random: () => number;
   constructor(factory: () => EngineWorker, initialFen?: string, random = Math.random,
-    deadlines?: { init: number; search: number }) {
+    deadlines?: { init: number; search: number }, onComplete: (game: CompletedGame) => void = () => {}) {
+    this.onComplete = onComplete;
     this.random = random;
     this.game = new Chess(initialFen);
     this.initialFen = this.game.fen();
@@ -80,7 +93,8 @@ export class GameController {
       engineStatus: this.engineState === "error" ? "Engine error"
         : this.engineState === "thinking" ? "Stockfish is thinking..."
         : this.engineState === "ready" ? "Stockfish 19 ready" : "Loading Stockfish...",
-      canUndo: !this.showSetup && history.length > 0,
+      canUndo: !this.showSetup && !this.completed && history.length > 0,
+      completedGame: this.completed,
       canMove: !this.showSetup && !this.pendingPromotion && !this.game.isGameOver() &&
         this.engineState === "ready" && this.game.turn() === this.playerColor,
       result: this.showSetup ? null : gameResult(this.game, this.playerColor),
@@ -116,6 +130,7 @@ export class GameController {
   private reset(color: PlayerColor) {
     this.engine.cancel();
     this.game.load(this.initialFen);
+    this.gameId = newGameId(); this.completed = null;
     this.playerColor = color; this.orientation = color === "w" ? "white" : "black";
     this.pendingPromotion = null; this.showSetup = false;
     this.retryEngine();
@@ -151,6 +166,7 @@ export class GameController {
     this.pendingPromotion = null; this.afterPlayerMove();
   };
   private afterPlayerMove() {
+    this.finishIfEnded();
     if (!this.game.isGameOver() && !this.engine.search(this.search())) {
       // A dead session must become recoverable rather than leave an opponent turn locked.
       if (this.engineState !== "error") this.engine.fail();
@@ -164,11 +180,21 @@ export class GameController {
       const legal = this.game.moves({ verbose: true }).some(m => m.from === move.slice(0, 2) && m.to === move.slice(2, 4) && (m.promotion || "") === promotion);
       if (!legal) throw new Error("Illegal engine move");
       this.game.move({ from: move.slice(0, 2), to: move.slice(2, 4), ...(promotion ? { promotion } : {}) });
+      this.finishIfEnded();
       this.publish();
     } catch { this.engine.fail(); }
   }
+  private finishIfEnded() {
+    if (this.completed || !this.gameId || !this.game.isGameOver() || !this.game.history().length) return;
+    const result = this.game.isCheckmate() ? (this.game.turn() === this.playerColor ? "loss" : "win") : "draw";
+    this.completed = Object.freeze({ id: this.gameId, date: new Date().toISOString(), result,
+      playerColor: this.playerColor, difficulty: this.difficulty, moves: Math.ceil(this.game.history().length / 2) });
+    // Latch before notifying; repeated callbacks/re-renders cannot earn this result twice.
+    // Progress/storage failures must never affect chess or the engine lifecycle.
+    try { this.onComplete(this.completed); } catch { /* Optional local progress is isolated. */ }
+  }
   undoMove = () => {
-    if (!this.active || !this.snapshot.canUndo) return;
+    if (!this.active || this.completed || !this.snapshot.canUndo) return;
     this.engine.cancel(); this.pendingPromotion = null;
     // Rewind to the previous human decision, including interrupted AI searches.
     this.game.undo();

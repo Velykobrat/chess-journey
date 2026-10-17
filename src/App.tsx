@@ -2,11 +2,14 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Chessboard, type PieceDropHandlerArgs } from "react-chessboard";
 import { createStockfishWorker } from "./services/stockfish";
 import { GameController, DIFFICULTIES, type DifficultyKey, type PromotionPiece } from "./game/controller";
+import { ProgressStore } from "./progress/store";
+import { JourneyCard } from "./progress/JourneyCard";
 import "./App.css";
 
 function App() {
-  const [controller] = useState(() => new GameController(createStockfishWorker));
-  useEffect(() => controller.connect(), [controller]);
+  const [progress] = useState(() => new ProgressStore());
+  const [controller] = useState(() => new GameController(createStockfishWorker, undefined, undefined, undefined, progress.record));
+  useEffect(() => { progress.load(); return controller.connect(); }, [controller, progress]);
   const {
     position, moveHistory, lastMove, orientation, playerColorChoice, playerColor,
     difficulty, engineStatus, engineReady, engineError, canMove, canUndo,
@@ -230,21 +233,7 @@ function App() {
             </button>
           </div>
 
-          <div className="journey-card">
-            <div className="journey-card__top">
-              <span>YOUR JOURNEY</span>
-              <strong>Beginner</strong>
-            </div>
-
-            <div className="progress-track">
-              <div className="progress-value" />
-            </div>
-
-            <div className="journey-card__footer">
-              <span>Level 1</span>
-              <span>0 / 100 XP</span>
-            </div>
-          </div>
+          <JourneyCard store={progress} />
         </aside>
       </main>
 

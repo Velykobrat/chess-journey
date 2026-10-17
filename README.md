@@ -1,3 +1,13 @@
+# Chess Journey — Phase 2
+
+Local player journey: win +30 XP, draw +15, loss +5; a new level every 100 total XP, consistent lifetime stats and the last ten completed games. No Elo or accounts.
+
+Progress is versioned localStorage data with a session-only fallback and a visible notice when persistence is unavailable. Completed games cannot be undone; abandoned games earn no XP. Rules, schema, failure behavior and QA: [Phase 2 report](docs/phase-2-progress.md).
+
+`npm test`, `npm run lint`, `npm run build`; Node 22.18+ for the built-in TypeScript test runner. Dependency versions remain unchanged. Phase 1 engine stability and all 40 baseline tests are preserved. Browser QA is pending due to the implementation environment's localhost restriction.
+
+## Earlier phase reference
+
 # Chess Journey — Phase 1
 
 Game/Stockfish lifecycle stabilization. Architecture, confirmed defects, tests and manual QA: [Phase 1 report](docs/phase-1-stability.md).

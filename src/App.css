@@ -902,3 +902,13 @@ button {
   width: 100%;
   min-height: 48px;
 }
+/* Local journey extends the existing card and palette; no board/layout changes. */
+.journey-stats { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 12px; font-size: .65rem; color: var(--muted); }
+.journey-notice { margin: 12px 0 0; color: var(--muted); font-size: .65rem; line-height: 1.6; overflow-wrap: anywhere; }
+.journey-history { margin-top: 14px; font-size: .7rem; }
+.journey-history summary { cursor: pointer; color: var(--accent); padding-block: 8px; }
+.journey-history summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.journey-history ol { list-style: none; padding: 0; margin: 4px 0 0; max-height: 240px; overflow-y: auto; }
+.journey-history li { padding: 10px 0; border-top: 1px solid rgba(217, 185, 91, .15); }
+.journey-history li > div { display: flex; justify-content: space-between; gap: 8px; }
+.journey-history time, .journey-history small { display: block; margin-top: 4px; color: var(--muted); font-size: .65rem; line-height: 1.5; }
