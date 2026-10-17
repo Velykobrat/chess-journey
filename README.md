@@ -1,3 +1,21 @@
+# Chess Journey — Phase 1
+
+Game/Stockfish lifecycle stabilization. Architecture, confirmed defects, tests and manual QA: [Phase 1 report](docs/phase-1-stability.md).
+
+Use Node 22.18+ for the dependency-free TypeScript tests:
+
+```sh
+npm ci
+npm test
+npm run lint
+npm run build
+npm run dev
+```
+
+React/Vite/chess.js/Stockfish versions, visuals and screen structure are preserved. No XP/progression/history feature is implemented in this phase; existing journey labels remain placeholders. Browser QA in the implementation environment was blocked on localhost, and the existing dev dependency audit warning is documented in the report.
+
+---
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
