@@ -1,3 +1,13 @@
+# Chess Journey — Phase 3
+
+UI architecture and accessibility polish: independent screen components, labelled/focus-managed dialogs, keyboard coordinate moves, announced engine states and reduced motion. The dark/gold visual direction, engine and local progression contracts remain unchanged.
+
+Use `npm test`, `npm run lint`, `npm run build` on Node 22.18+. The TSX tests reuse the existing TypeScript compiler, with no added dependency. 104 tests pass; real browser/device QA remains pending because localhost navigation is blocked in the implementation environment.
+
+[Phase 3 report and v1.0 acceptance checks](docs/phase-3-polish.md). Phase 1/2 reports below document the retained game/progress contracts.
+
+## Earlier phase references
+
 # Chess Journey — Phase 2
 
 Local player journey: win +30 XP, draw +15, loss +5; a new level every 100 total XP, consistent lifetime stats and the last ten completed games. No Elo or accounts.

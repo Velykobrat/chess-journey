@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types --test tests/*.test.ts"
+    "test": "node --experimental-strip-types --import ./scripts/test-tsx-loader.mjs --test tests/*.test.ts"
   },
   "dependencies": {
     "chess.js": "^1.4.0",
