@@ -1,113 +1,77 @@
-# Chess Journey — Phase 3
+# Chess Journey
 
-UI architecture and accessibility polish: independent screen components, labelled/focus-managed dialogs, keyboard coordinate moves, announced engine states and reduced motion. The dark/gold visual direction, engine and local progression contracts remain unchanged.
+A browser chess game against **Stockfish 19**, with five difficulty settings, keyboard and drag-and-drop moves, and local player progression. Version **1.0.0 release candidate** — automated checks completed; final browser/device acceptance remains open. No account, backend, analytics or cloud synchronization.
 
-Use `npm test`, `npm run lint`, `npm run build` on Node 22.18+. The TSX tests reuse the existing TypeScript compiler, with no added dependency. 104 tests pass; real browser/device QA remains pending because localhost navigation is blocked in the implementation environment.
+[Open Chess Journey](https://chess-journey.vercel.app/) · [Release-candidate report](docs/release-v1.0.0.md)
 
-[Phase 3 report and v1.0 acceptance checks](docs/phase-3-polish.md). Phase 1/2 reports below document the retained game/progress contracts.
+## Features
 
-## Earlier phase references
+- Play White, Black or a randomly chosen color on the existing dark/gold board.
+- Five Stockfish Skill Level settings; chess.js handles legal moves, Q/R/B/N promotion and game endings.
+- New game, rematch, board flip and pre-completion undo; stale cancelled Worker sessions cannot play in replacement games.
+- Recoverable engine loading/error/retry states, keyboard coordinate moves, labelled focus-managed dialogs and reduced motion.
+- XP, levels, statistics and ten recent completed games stored locally when browser storage permits.
 
-# Chess Journey — Phase 2
+## Technology
 
-Local player journey: win +30 XP, draw +15, loss +5; a new level every 100 total XP, consistent lifetime stats and the last ten completed games. No Elo or accounts.
+React 19, TypeScript 6, Vite 8, react-chessboard, chess.js 1.4 and Stockfish.js 19 WASM. Node's built-in test runner uses the existing TypeScript compiler for TSX tests. No state-management framework, database or extra test dependency.
 
-Progress is versioned localStorage data with a session-only fallback and a visible notice when persistence is unavailable. Completed games cannot be undone; abandoned games earn no XP. Rules, schema, failure behavior and QA: [Phase 2 report](docs/phase-2-progress.md).
+## Local development
 
-`npm test`, `npm run lint`, `npm run build`; Node 22.18+ for the built-in TypeScript test runner. Dependency versions remain unchanged. Phase 1 engine stability and all 40 baseline tests are preserved. Browser QA is pending due to the implementation environment's localhost restriction.
-
-## Earlier phase reference
-
-# Chess Journey — Phase 1
-
-Game/Stockfish lifecycle stabilization. Architecture, confirmed defects, tests and manual QA: [Phase 1 report](docs/phase-1-stability.md).
-
-Use Node 22.18+ for the dependency-free TypeScript tests:
+Use Node **22.18+** (checks performed on Node 24.18.0) and npm. Keep `package-lock.json` and use the pinned installation:
 
 ```sh
 npm ci
-npm test
-npm run lint
-npm run build
 npm run dev
 ```
 
-React/Vite/chess.js/Stockfish versions, visuals and screen structure are preserved. No XP/progression/history feature is implemented in this phase; existing journey labels remain placeholders. Browser QA in the implementation environment was blocked on localhost, and the existing dev dependency audit warning is documented in the report.
+Vite prints the local URL. The JS/WASM pair is already in `public/stockfish/`; it is not fetched from a CDN. Development requires a normal browser with Web Workers and WebAssembly.
 
----
-
-# React + TypeScript + Vite
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```sh
+npm test
+npm run lint
+npm run build
+npm audit
+git diff --check
+npm run preview
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+`build` runs TypeScript project checks then generates `dist/`. `preview` serves that built output for local QA; it is not a production server. Environment restrictions and the direct Node equivalents used here are documented in [testing](docs/testing.md).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Architecture
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+`App.tsx` coordinates stores and screen components. `GameController` owns chess.js, turns, completion IDs and undo policy. `StockfishEngine` owns UCI/Worker sessions and watchdogs. `src/progress/` separates model, storage, store and journey UI. `src/ui/` holds screen components, dialogs and keyboard controls. [Architecture and data flow](docs/architecture.md).
 
-```
+## XP and local progress
+
+Win **+30 XP**, draw **+15 XP**, loss **+5 XP**. Level starts at 1 and increases every 100 total XP; XP is motivation, **not Elo**. Win rate and level are derived. Only a real chess.js game completion is credited; abandoned games earn nothing. Completed games cannot be undone. Rematch starts a new game ID.
+
+The versioned `chess-journey:progress:v1` record holds consistent lifetime counters, the ten most recent results and a lifetime credited-ID ledger for deduplication. It contains no names/accounts or full board histories. Corrupt/unknown data is preserved, never automatically cleared. Storage failures switch the current tab to memory and show a notice; unsaved progress is lost on reload. There is no unfinished-game restoration, backup, anti-cheat guarantee or atomic multi-tab merge. Use one playing tab. Detailed schema/limits: [Phase 2](docs/phase-2-progress.md).
+
+## Stockfish / WASM
+
+The bundled build is `stockfish-19-lite-single`: single-threaded, runs locally in a Worker, with no server engine. It retains Stockfish 19 but the lite build is not identical in strength to the larger upstream build; difficulty labels are settings, not calibrated Elo ratings. Engine downloads/startup can take time on slower devices. Initialization/search failures expose Retry; cancellation terminates and replaces the session.
+
+The unmodified engine's GPL license and source links are included at [public/stockfish/SOURCE.md](public/stockfish/SOURCE.md). Keep its JS/WASM, license and notices together. The application MIT license does not override Stockfish's GPL. [Third-party notices](THIRD_PARTY_NOTICES.md).
+
+## Deployment
+
+Existing Vercel Git integration publishes `main`: Vite build, output `dist/`. The app assumes hosting at the domain root (`/stockfish/...` and root metadata URLs). No secrets or server provisioning are required. Preserve public engine assets/license and serve WASM correctly. Deployment success is checked for the published commit; it does not prove browser gameplay. No manual deploy or production settings changes are part of this RC.
+
+## Known limits and release status
+
+- Browser QA in the implementation environment fails on the first localhost navigation. No final browser, screen-reader, touch or responsive PASS is claimed; the acceptance matrix is in [testing](docs/testing.md).
+- Local progress is browser/origin-specific and can be cleared or edited by the user. It is not synchronized or an online ranking.
+- Google Fonts is a third-party network resource; first load and fonts/engine caching are not a guaranteed offline/PWA mode. No analytics/tracking has been added.
+- npm audit is a registry advisory check, not proof of security. The known source-map-js advisory was patched narrowly to 1.2.2; framework/engine versions are unchanged.
+- Package version 1.0.0 identifies the candidate; no final Git tag/Release exists from this task. Final release requires separate approval and real-device acceptance.
+
+## Documentation
+
+[Architecture](docs/architecture.md) · [Testing](docs/testing.md) · [Release v1.0.0 candidate](docs/release-v1.0.0.md) · [Portfolio case](docs/portfolio-case.md)
+
+Historical implementation reports are preserved: [Phase 1](docs/phase-1-stability.md), [Phase 2](docs/phase-2-progress.md), [Phase 3](docs/phase-3-polish.md). Their earlier audit warnings/test counts refer to those phases; the current RC report supersedes them operationally.
+
+## License
+
+Application code: [MIT](LICENSE), existing copyright notice retained. Engine and dependency terms: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). No usage, sales, user-count or advertising-result claims are made.
